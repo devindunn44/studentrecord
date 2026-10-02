@@ -8,6 +8,7 @@ function today(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+
 function lsGet(){try{var v=localStorage.getItem(LS);return v?JSON.parse(v):null}catch(e){return null}}
 function lsSet(){try{localStorage.setItem(LS,JSON.stringify(data))}catch(e){}}
 async function load(){
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
   var l=lsGet();if(l&&l.students)data=l;
   store='Saved in this browser (localStorage). Use Backup (JSON) regularly.';
 }
@@ -18,13 +19,35 @@ function matchI(i,q){return (i.type+' '+i.summary+' '+i.actions+' '+i.followup+'
 function matchS(s,q){return (s.name+' '+s.grade+' '+s.notes).toLowerCase().indexOf(q)>-1}
 function types(){return ['Academic','Behavior','Attendance','Social/Emotional','Family contact','Check-in','Other']}
 
+function delPhrase(){var d=view.del,s=student(view.sid);return d&&d.kind==='stu'&&s?s.name:'DELETE'}
+function renderDel(){
+  var d=view.del,s=student(view.sid);if(!d||!s)return '';
+  var it=d.kind==='int'?s.interventions.find(function(i){return i.id===d.id}):null;
+  if(d.kind==='int'&&!it)return '';
+  var o='<div class="modal"><div class="box">',p=delPhrase();
+  var what=d.kind==='stu'?'<b>'+esc(s.name)+'</b> and all <b>'+s.interventions.length+'</b> logged intervention(s)':'the intervention from <b>'+esc(it.date)+'</b> ('+esc(it.type)+')';
+  if(d.step===1){
+    o+='<h2>Step 1 of 3: Review</h2><p>You are about to permanently remove '+what+'. This cannot be undone.</p>'
+     +(it?'<div class="note meta">'+esc(it.summary.slice(0,200))+(it.summary.length>200?'…':'')+'</div>':'')
+     +'<p class="meta">Tip: download a backup first so you can restore it later.</p>'
+     +'<div class="row"><button data-a="delBackup">Download backup first</button><button class="d" data-a="delNext">Continue</button><button data-a="delCancel">Cancel</button></div>';
+  } else if(d.step===2){
+    o+='<h2>Step 2 of 3: Type to confirm</h2><p>Type <b>'+esc(p)+'</b> exactly to continue.</p>'
+     +'<input type="text" id="delin" autocomplete="off" style="width:100%"><div class="row" style="margin-top:10px"><button class="d" id="delgo" data-a="delNext" disabled>Continue</button><button data-a="delCancel">Cancel</button></div>';
+  } else {
+    o+='<h2>Step 3 of 3: Final confirmation</h2><p>Last chance. Permanently delete '+what+'?</p>'
+     +'<div class="row"><button data-a="delCancel" class="p">No, keep it</button><button class="d" data-a="delConfirm">Yes, permanently delete</button></div>';
+  }
+  return o+'</div></div>';
+}
 function render(){
   $('#status').textContent=store||'';
   var h='';
   if(view.exp!==null){h=renderExport()}
   else if(view.page==='list')h=renderList();
   else h=renderStudent();
-  $('#app').innerHTML=h;
+  $('#app').innerHTML=h+renderDel();
+  var di=$('#delin');if(di)di.focus();
 }
 function renderList(){
   var q=view.q.toLowerCase().trim(),h='';
@@ -120,6 +143,7 @@ function copyText(t){
   $('#status').textContent=ok?'Copied to clipboard':'Text selected — press Ctrl/Cmd+C to copy';
 }
 document.addEventListener('input',function(e){
+  if(e.target.id==='delin'){$('#delgo').disabled=e.target.value.trim()!==delPhrase();return}
   if(e.target.id==='q'){view.q=e.target.value;var p=e.target.selectionStart;render();var q=$('#q');q.focus();try{q.setSelectionRange(p,p)}catch(x){}}
 });
 document.addEventListener('click',async function(e){
@@ -133,7 +157,7 @@ document.addEventListener('click',async function(e){
   else if(a==='editStu'){view.editStu=true}
   else if(a==='cancelEditStu'){view.editStu=false}
   else if(a==='saveEditStu'){var nm=$('#en').value.trim();if(!nm)return;s.name=nm;s.grade=$('#eg').value.trim();s.notes=$('#eb').value.trim();view.editStu=false;await save()}
-  else if(a==='delStu'){if(confirm('Delete '+s.name+' and all their interventions? This cannot be undone.')){data.students=data.students.filter(function(x){return x!==s});view.page='list';await save()}}
+  else if(a==='delStu'){view.del={kind:'stu',step:1}}
   else if(a==='newInt'){view.editing='new'}
   else if(a==='editInt'){view.editing=id}
   else if(a==='cancelInt'){view.editing=null}
@@ -142,7 +166,16 @@ document.addEventListener('click',async function(e){
     if(view.editing==='new'){rec.id=uid();rec.done=false;s.interventions.push(rec)}
     else{var o=s.interventions.find(function(i){return i.id===view.editing});Object.assign(o,rec)}
     view.editing=null;await save()}
-  else if(a==='delInt'){if(confirm('Delete this intervention?')){s.interventions=s.interventions.filter(function(i){return i.id!==id});await save()}}
+  else if(a==='delInt'){view.del={kind:'int',id:id,step:1}}
+  else if(a==='delCancel'){view.del=null}
+  else if(a==='delBackup'){await saveFile('student_log_backup_'+today()+'.json',JSON.stringify(data,null,2))}
+  else if(a==='delNext'){var d=view.del;
+    if(d.step===2){if($('#delin').value.trim()!==delPhrase())return}
+    d.step++}
+  else if(a==='delConfirm'){var d2=view.del,ok2=false;
+    if(d2.kind==='stu'&&d2.step===3&&s){data.students=data.students.filter(function(x){return x!==s});view.page='list';ok2=true}
+    else if(d2.kind==='int'&&d2.step===3&&s){s.interventions=s.interventions.filter(function(i){return i.id!==d2.id});ok2=true}
+    view.del=null;if(ok2)await save()}
   else if(a==='toggleFu'){var i2=s.interventions.find(function(i){return i.id===id});i2.done=!i2.done;await save()}
   else if(a==='expOne'){view.exp=mdFor(s);view.expName=s.name.replace(/\W+/g,'_')+'_history.md'}
   else if(a==='expAll'){view.exp=fullMd();view.expName='all_students_history.md'}

@@ -23,6 +23,7 @@ python3 -m http.server 8000
 3. Push to `main`; the included workflow publishes the site.
 
 ## Data & privacy
+- Deleting a student or an intervention takes a 3-step confirmation (review, type the name or `DELETE`, final confirm), with an optional backup download first.
 - Data is stored **only in your browser's localStorage** on that device. It is not sent anywhere.
 - Clearing browser data deletes it, and it does not sync between devices. Use **Backup (JSON)** regularly.
 - GitHub Pages sites are public by default. The page contains no student data, but anyone with the URL can open the app. Never commit backup or export files to the repo (they are git-ignored).
